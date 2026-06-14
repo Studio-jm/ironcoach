@@ -348,6 +348,7 @@ export function buildCheckInPrompt(params: {
     travelDays: number
   }
   sessionBreakdown?: SessionBreakdown | null
+  trendsBlock?: string
   recentStravaActivities: Record<string, unknown>[]
   externalRunPlan?: CampusCoachPlan | null
   targetRaces?: Race[]
@@ -417,7 +418,7 @@ ${JSON.stringify(params.recentStravaActivities, null, 2)}
 
 ## Plan initial semaine suivante
 ${JSON.stringify(params.nextWeekDraft, null, 2)}
-${externalBlock}${racesBlock}${strengthBlock}
+${params.trendsBlock ?? ""}${externalBlock}${racesBlock}${strengthBlock}
 
 ## Tâche
 Analyse la situation et génère le plan ajusté pour la semaine suivante en JSON :
@@ -452,6 +453,11 @@ Règles :
   - Une discipline bien suivie avec bon ressenti → tu peux la progresser
   - Tiens compte du ressenti par séance (feeling) quand il est renseigné
 - Le ressenti subjectif (fatigue/courbatures) prime sur la compliance pour la sécurité
+- Exploite les TENDANCES long terme :
+  - Fatigue en hausse continue → semaine de récupération proactive même sans pic
+  - Charge qui rampe trop vite (>10%/sem) → plafonne, ne pas ajouter de volume
+  - Discipline avec compliance faible récurrente → change l'approche (placement, format, volume), ne répète pas le même schéma qui ne marche pas
+  - Reste cohérent avec tes décisions précédentes (cf. mémoire) — ne fais pas de zigzag
 - Toujours expliquer le raisonnement à l'athlète, en citant les disciplines concernées
 - Les sessions externes (Campus Coach) sont à placer telles quelles
 - Les jours de renfo restent intouchables

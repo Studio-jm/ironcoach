@@ -5,6 +5,8 @@ import { formatDate } from "@/lib/utils"
 import Link from "next/link"
 import SessionCard from "@/components/SessionCard"
 import InfoTooltip from "@/components/InfoTooltip"
+import TrendsCard from "@/components/TrendsCard"
+import { computeTrends } from "@/lib/trends"
 
 const DAY_LABELS: Record<string, string> = {
   monday: "Lundi", tuesday: "Mardi", wednesday: "Mercredi",
@@ -40,6 +42,7 @@ export default async function DashboardPage({
           sessions: {
             orderBy: [{ day: "asc" }, { orderInDay: "asc" }],
           },
+          checkIn: true,
         },
       },
       _count: { select: { weeks: true, checkIns: true } },
@@ -69,6 +72,11 @@ export default async function DashboardPage({
     activePlan.weeks.find((w) => w.weekNumber === requestedWeekNum) ??
     activePlan.weeks.find((w) => w.status === "CURRENT") ??
     activePlan.weeks[0]
+
+  // Tendances calculées sur les semaines complétées
+  const trends = computeTrends(
+    activePlan.weeks.filter((w) => w.status === "COMPLETED")
+  )
 
   const sessions = selectedWeek?.sessions ?? []
   const sessionsByDay = DAYS_ORDER.reduce<Record<string, typeof sessions>>((acc, day) => {
@@ -302,6 +310,9 @@ export default async function DashboardPage({
             </div>
           )}
         </div>
+
+        {/* Tendances */}
+        <TrendsCard trends={trends} />
 
         {/* Progression */}
         <div className="bg-zinc-900 rounded-xl p-5 space-y-3">

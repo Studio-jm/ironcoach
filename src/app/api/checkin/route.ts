@@ -4,6 +4,7 @@ import { prisma } from "@/lib/prisma"
 import { getRecentActivities } from "@/lib/strava/client"
 import { generateWeekAdjustment } from "@/lib/ai/coach"
 import { computeWeekBreakdown } from "@/lib/sessions"
+import { computeTrends, renderTrendsForPrompt } from "@/lib/trends"
 import type { StravaActivity } from "@/lib/strava/client"
 
 // Renvoie le contexte du check-in : semaine en cours + bilan réel des séances
@@ -87,6 +88,19 @@ export async function POST(req: Request) {
   const effectiveSessionsDone = tracked > 0 ? breakdown.totalCompleted : sessionsDone
   const effectiveSessionsPlanned = tracked > 0 ? breakdown.totalPlanned : sessionsPlanned
 
+  // Historique : semaines déjà complétées (pour l'analyse de tendances)
+  const completedWeeks = await prisma.trainingWeek.findMany({
+    where: { planId, status: "COMPLETED" },
+    include: { sessions: true, checkIn: true },
+    orderBy: { weekNumber: "asc" },
+  })
+  // Inclut la semaine en cours (sur le point d'être complétée) dans les tendances
+  const trends = computeTrends([
+    ...completedWeeks,
+    { ...currentWeek, checkIn: null, actualTSS: breakdown.realizedTSS },
+  ])
+  const trendsBlock = renderTrendsForPrompt(trends)
+
   // Récupère les activités Strava de la semaine
   let recentActivities: StravaActivity[] = []
   const stravaToken = await prisma.stravaToken.findUnique({ where: { userId } })
@@ -120,6 +134,7 @@ export async function POST(req: Request) {
       travelDays,
     },
     sessionBreakdown: breakdown,
+    trendsBlock,
     externalRunPlan: plan.externalRunPlan as Parameters<typeof generateWeekAdjustment>[0]["externalRunPlan"],
     targetRaces: plan.targetRaces as Parameters<typeof generateWeekAdjustment>[0]["targetRaces"],
     strengthDays: plan.strengthDays,
@@ -184,7 +199,7 @@ export async function POST(req: Request) {
     }),
     prisma.trainingWeek.update({
       where: { id: currentWeek.id },
-      data: { status: "COMPLETED" },
+      data: { status: "COMPLETED", actualTSS: breakdown.realizedTSS },
     }),
     prisma.trainingSession.deleteMany({ where: { weekId: nextWeek.id } }),
     prisma.trainingSession.createMany({ data: sessionsToCreate }),
