@@ -7,7 +7,9 @@ import SessionCard from "@/components/SessionCard"
 import InfoTooltip from "@/components/InfoTooltip"
 import TrendsCard from "@/components/TrendsCard"
 import SyncStravaButton from "@/components/SyncStravaButton"
+import FitnessChart from "@/components/FitnessChart"
 import { computeTrends } from "@/lib/trends"
+import { computeFitness } from "@/lib/fitness"
 
 const DAY_LABELS: Record<string, string> = {
   monday: "Lundi", tuesday: "Mardi", wednesday: "Mercredi",
@@ -78,6 +80,9 @@ export default async function DashboardPage({
   const trends = computeTrends(
     activePlan.weeks.filter((w) => w.status === "COMPLETED")
   )
+
+  // Courbe de forme (CTL/ATL/TSB) sur tout le plan
+  const fitness = computeFitness(activePlan.weeks)
 
   const sessions = selectedWeek?.sessions ?? []
   const sessionsByDay = DAYS_ORDER.reduce<Record<string, typeof sessions>>((acc, day) => {
@@ -318,6 +323,9 @@ export default async function DashboardPage({
             </div>
           )}
         </div>
+
+        {/* Courbe de forme */}
+        <FitnessChart model={fitness} />
 
         {/* Tendances */}
         <TrendsCard trends={trends} />
