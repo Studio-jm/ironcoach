@@ -1,0 +1,266 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+// ─── Auth (NextAuth v5) ─────────────────────────────────────────────────────
+
+model User {
+  id            String    @id @default(cuid())
+  name          String?
+  email         String    @unique
+  emailVerified DateTime?
+  image         String?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  accounts    Account[]
+  sessions    Session[]
+  stravaToken StravaToken?
+  profile     AthleteProfile?
+  plans       TrainingPlan[]
+  checkIns    CheckIn[]
+
+  @@map("users")
+}
+
+model Account {
+  id                String  @id @default(cuid())
+  userId            String
+  type              String
+  provider          String
+  providerAccountId String
+  refresh_token     String? @db.Text
+  access_token      String? @db.Text
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String? @db.Text
+  session_state     String?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+  @@map("accounts")
+}
+
+model Session {
+  id           String   @id @default(cuid())
+  sessionToken String   @unique
+  userId       String
+  expires      DateTime
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("sessions")
+}
+
+model VerificationToken {
+  identifier String
+  token      String
+  expires    DateTime
+
+  @@unique([identifier, token])
+  @@map("verification_tokens")
+}
+
+// ─── Strava ─────────────────────────────────────────────────────────────────
+
+model StravaToken {
+  id           String   @id @default(cuid())
+  userId       String   @unique
+  athleteId    Int
+  accessToken  String   @db.Text
+  refreshToken String   @db.Text
+  expiresAt    DateTime
+  scope        String
+  updatedAt    DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("strava_tokens")
+}
+
+// ─── Athlete Profile ─────────────────────────────────────────────────────────
+
+model AthleteProfile {
+  id              String   @id @default(cuid())
+  userId          String   @unique
+  birthYear       Int?
+  gender          String?
+  weightKg        Float?
+  heightCm        Float?
+  swimLevel       Int      @default(5)
+  bikeLevel       Int      @default(5)
+  runLevel        Int      @default(5)
+  weeklySwimHours Float    @default(2)
+  weeklyBikeHours Float    @default(4)
+  weeklyRunHours  Float    @default(3)
+  restDays        String[]
+  // Préférences pour les séances de renforcement
+  // Format : { "type": "crossfit"|"halterophilie"|"general"|"mixed", "days": ["friday"], "replacesPlannedStrength": true }
+  strengthPreferences Json?
+  stravaSnapshot  Json?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("athlete_profiles")
+}
+
+// ─── Training Plan ────────────────────────────────────────────────────────────
+
+model TrainingPlan {
+  id          String     @id @default(cuid())
+  userId      String
+  name        String
+  targetDate  DateTime?
+  targetEvent EventType  @default(IRONMAN)
+  targetGoal  String?
+  status      PlanStatus @default(ACTIVE)
+  overview    Json?
+  totalWeeks  Int
+  startDate   DateTime
+  // Plans externes (Campus Coach, etc.) — plan en cours pour les 4 prochaines semaines
+  externalRunPlan     Json?
+  // Historique : chaque bloc de plan externe envoyé (pour mémoire long terme)
+  externalPlanHistory Json?    // Array de { uploadedAt, weeks: [...] }
+  // Courses intermédiaires (trails, semis, etc.)
+  targetRaces         Json?    // Array de { date, name, distanceKm, elevationM, priority, type }
+  // Jours dédiés au renforcement (placeholder, non géré par IronCoach)
+  strengthDays        String[]
+  // Mode : "manage_run" (Claude gère le run) ou "external_run" (Campus Coach)
+  runManagementMode   String   @default("external_run")
+  createdAt   DateTime   @default(now())
+  updatedAt   DateTime   @updatedAt
+
+  user     User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  weeks    TrainingWeek[]
+  checkIns CheckIn[]
+
+  @@map("training_plans")
+}
+
+enum EventType {
+  IRONMAN
+  HALF_IRONMAN
+  OLYMPIC
+  SPRINT
+}
+
+enum PlanStatus {
+  ACTIVE
+  PAUSED
+  COMPLETED
+  ARCHIVED
+}
+
+// ─── Training Week ────────────────────────────────────────────────────────────
+
+model TrainingWeek {
+  id                String     @id @default(cuid())
+  planId            String
+  weekNumber        Int
+  startDate         DateTime
+  endDate           DateTime
+  phase             String
+  status            WeekStatus @default(UPCOMING)
+  plannedSessions   Json       // legacy + cache pour le check-in
+  completedSessions Json?
+  plannedTSS        Float?
+  actualTSS         Float?
+  aiNotes           String?    @db.Text
+  createdAt         DateTime   @default(now())
+  updatedAt         DateTime   @updatedAt
+
+  plan     TrainingPlan      @relation(fields: [planId], references: [id], onDelete: Cascade)
+  checkIn  CheckIn?
+  sessions TrainingSession[]
+
+  @@unique([planId, weekNumber])
+  @@map("training_weeks")
+}
+
+enum WeekStatus {
+  UPCOMING
+  CURRENT
+  COMPLETED
+  SKIPPED
+}
+
+// ─── Training Session (séance individuelle) ──────────────────────────────────
+
+model TrainingSession {
+  id          String        @id @default(cuid())
+  weekId      String
+  // Position dans la semaine
+  day         String        // monday, tuesday...
+  orderInDay  Int           @default(0)
+  // Origine de la séance
+  source      String        @default("ai")  // "ai" | "external" (Campus Coach) | "strength" (libre)
+  externalRef String?       // Référence dans le plan externe (ex: "run_1")
+  // Plan théorique
+  discipline  String        // swim, bike, run, brick, strength
+  durationMin Int
+  zone        String        // Z1-Z5
+  description String        @db.Text
+  plannedTSS  Int           @default(0)
+  // Validation
+  status      SessionStatus @default(PLANNED)
+  completedAt DateTime?
+  // Données réelles (manuelles ou Strava)
+  actualDurationMin Int?
+  actualDistanceKm  Float?
+  actualTSS         Int?
+  avgHeartrate      Int?
+  feeling           Int?     // 1-10
+  notes             String?  @db.Text
+  // Lien Strava
+  stravaActivityId  BigInt?
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  week TrainingWeek @relation(fields: [weekId], references: [id], onDelete: Cascade)
+
+  @@index([weekId, day, orderInDay])
+  @@map("training_sessions")
+}
+
+enum SessionStatus {
+  PLANNED
+  COMPLETED
+  SKIPPED
+  PARTIAL
+}
+
+// ─── Check-in hebdomadaire ────────────────────────────────────────────────────
+
+model CheckIn {
+  id              String   @id @default(cuid())
+  userId          String
+  planId          String
+  weekId          String   @unique
+  fatigueScore    Int
+  motivationScore Int
+  sorenessScore   Int
+  sessionsDone    Int
+  sessionsPlanned Int
+  notes           String?  @db.Text
+  sickDays        Int      @default(0)
+  travelDays      Int      @default(0)
+  aiAdjustment    String?  @db.Text
+  aiRationale     String?  @db.Text
+  submittedAt     DateTime @default(now())
+
+  user User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  plan TrainingPlan @relation(fields: [planId], references: [id], onDelete: Cascade)
+  week TrainingWeek @relation(fields: [weekId], references: [id], onDelete: Cascade)
+
+  @@map("check_ins")
+}
