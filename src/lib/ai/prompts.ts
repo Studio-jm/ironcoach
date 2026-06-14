@@ -306,6 +306,34 @@ Règles :
 
 // ─────────────────────────────────────────────────────────────────────────────
 
+type SessionBreakdown = {
+  totalPlanned: number
+  totalCompleted: number
+  totalPartial: number
+  totalSkipped: number
+  totalUntracked: number
+  compliancePct: number
+  plannedTSS: number
+  realizedTSS: number
+  byDiscipline: {
+    discipline: string
+    label: string
+    planned: number
+    completed: number
+    partial: number
+    skipped: number
+    untracked: number
+  }[]
+  sessions: {
+    discipline: string
+    day: string
+    description: string
+    status: string
+    plannedTSS: number
+    feeling: number | null
+  }[]
+}
+
 export function buildCheckInPrompt(params: {
   currentWeek: Record<string, unknown>
   nextWeekDraft: Record<string, unknown>
@@ -319,13 +347,43 @@ export function buildCheckInPrompt(params: {
     sickDays: number
     travelDays: number
   }
+  sessionBreakdown?: SessionBreakdown | null
   recentStravaActivities: Record<string, unknown>[]
   externalRunPlan?: CampusCoachPlan | null
   targetRaces?: Race[]
   strengthDays?: string[]
   runManagementMode?: "external_run" | "manage_run"
 }) {
-  const compliance = Math.round((params.checkIn.sessionsDone / params.checkIn.sessionsPlanned) * 100)
+  // Compliance réelle issue des séances validées si dispo, sinon déclarée
+  const b = params.sessionBreakdown
+  const compliance = b && (b.totalCompleted + b.totalPartial + b.totalSkipped) > 0
+    ? b.compliancePct
+    : Math.round((params.checkIn.sessionsDone / params.checkIn.sessionsPlanned) * 100)
+
+  const breakdownBlock = b
+    ? `\n## Bilan réel des séances (validées par l'athlète)
+- Compliance pondérée : ${b.compliancePct}% (Fait=1, Partiel=0,5)
+- TSS planifié vs réalisé : ${b.plannedTSS} → ${b.realizedTSS}
+- Séances : ${b.totalCompleted} faites · ${b.totalPartial} partielles · ${b.totalSkipped} sautées · ${b.totalUntracked} non suivies
+
+### Détail par discipline
+${b.byDiscipline
+  .map(
+    (d) =>
+      `- ${d.label} : ${d.completed}/${d.planned} faites${d.partial ? `, ${d.partial} partielle(s)` : ""}${d.skipped ? `, ${d.skipped} sautée(s)` : ""}${d.untracked ? `, ${d.untracked} non suivie(s)` : ""}`
+  )
+  .join("\n")}
+
+### Détail séance par séance
+${b.sessions
+  .map(
+    (s) =>
+      `- [${s.status}] ${s.day} ${s.discipline} — ${s.description}${s.feeling != null ? ` (ressenti ${s.feeling}/10)` : ""}`
+  )
+  .join("\n")}
+
+⚠️ Base ton ajustement sur CE bilan réel par discipline. Exemple : si une discipline est régulièrement sautée, allège-la ou repense son placement ; si une discipline est bien suivie et l'athlète est en forme, tu peux la progresser.`
+    : ""
 
   const externalBlock = params.externalRunPlan
     ? `\n## Plan course externe en cours\n\`\`\`json\n${JSON.stringify(serializeCampusCoachForClaude(params.externalRunPlan), null, 2)}\n\`\`\`\nUtilise les séances correspondant à la semaine suivante. Source: "external".`
@@ -344,14 +402,15 @@ export function buildCheckInPrompt(params: {
 ## Semaine écoulée (planifiée)
 ${JSON.stringify(params.currentWeek, null, 2)}
 
-## Check-in de l'athlète
+## Check-in de l'athlète (ressenti subjectif)
 - Fatigue : ${params.checkIn.fatigueScore}/10
 - Motivation : ${params.checkIn.motivationScore}/10
 - Courbatures : ${params.checkIn.sorenessScore}/10 (10 = aucune)
-- Séances réalisées : ${params.checkIn.sessionsDone}/${params.checkIn.sessionsPlanned} (${compliance}%)
+- Compliance globale : ${compliance}%
 - Jours maladie : ${params.checkIn.sickDays}
 - Jours voyage/contrainte : ${params.checkIn.travelDays}
 - Notes : ${params.checkIn.notes || "Aucune"}
+${breakdownBlock}
 
 ## Activités Strava réelles (semaine)
 ${JSON.stringify(params.recentStravaActivities, null, 2)}
@@ -388,7 +447,12 @@ Règles :
 - Si fatigue >= 8 → semaine de récupération obligatoire (-30% volume)
 - Si compliance < 50% → réduire le volume de 20%
 - Si compliance > 90% ET motivation >= 8 → possible légère augmentation (+5%)
-- Toujours expliquer le raisonnement à l'athlète
+- Ajuste DISCIPLINE PAR DISCIPLINE selon le bilan réel :
+  - Une discipline régulièrement sautée → réduis son volume ou déplace-la sur un créneau plus réaliste
+  - Une discipline bien suivie avec bon ressenti → tu peux la progresser
+  - Tiens compte du ressenti par séance (feeling) quand il est renseigné
+- Le ressenti subjectif (fatigue/courbatures) prime sur la compliance pour la sécurité
+- Toujours expliquer le raisonnement à l'athlète, en citant les disciplines concernées
 - Les sessions externes (Campus Coach) sont à placer telles quelles
 - Les jours de renfo restent intouchables
 

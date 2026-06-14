@@ -3,7 +3,44 @@ import { auth } from "@/lib/auth"
 import { prisma } from "@/lib/prisma"
 import { getRecentActivities } from "@/lib/strava/client"
 import { generateWeekAdjustment } from "@/lib/ai/coach"
+import { computeWeekBreakdown } from "@/lib/sessions"
 import type { StravaActivity } from "@/lib/strava/client"
+
+// Renvoie le contexte du check-in : semaine en cours + bilan réel des séances
+// (utilisé par le formulaire pour pré-remplir la compliance)
+export async function GET() {
+  const session = await auth()
+  if (!session?.user?.id) {
+    return NextResponse.json({ error: "Non autorisé" }, { status: 401 })
+  }
+
+  const plan = await prisma.trainingPlan.findFirst({
+    where: { userId: session.user.id, status: "ACTIVE" },
+    orderBy: { createdAt: "desc" },
+    include: {
+      weeks: {
+        where: { status: "CURRENT" },
+        take: 1,
+        include: { sessions: true },
+      },
+    },
+  })
+
+  const currentWeek = plan?.weeks[0]
+  if (!plan || !currentWeek) {
+    return NextResponse.json({ error: "Aucune semaine en cours" }, { status: 404 })
+  }
+
+  const breakdown = computeWeekBreakdown(currentWeek.sessions)
+
+  return NextResponse.json({
+    planId: plan.id,
+    weekId: currentWeek.id,
+    weekNumber: currentWeek.weekNumber,
+    phase: currentWeek.phase,
+    breakdown,
+  })
+}
 
 export async function POST(req: Request) {
   const session = await auth()
@@ -28,7 +65,10 @@ export async function POST(req: Request) {
   } = body
 
   const [currentWeek, nextWeek, plan] = await Promise.all([
-    prisma.trainingWeek.findUnique({ where: { id: weekId } }),
+    prisma.trainingWeek.findUnique({
+      where: { id: weekId },
+      include: { sessions: true },
+    }),
     prisma.trainingWeek.findFirst({
       where: { planId, status: "UPCOMING" },
       orderBy: { weekNumber: "asc" },
@@ -39,6 +79,13 @@ export async function POST(req: Request) {
   if (!currentWeek || !nextWeek || !plan) {
     return NextResponse.json({ error: "Semaine introuvable" }, { status: 404 })
   }
+
+  // Bilan réel calculé depuis les séances validées par l'athlète
+  const breakdown = computeWeekBreakdown(currentWeek.sessions)
+  // Compliance réelle si des séances ont été suivies, sinon valeur déclarée
+  const tracked = breakdown.totalCompleted + breakdown.totalPartial + breakdown.totalSkipped
+  const effectiveSessionsDone = tracked > 0 ? breakdown.totalCompleted : sessionsDone
+  const effectiveSessionsPlanned = tracked > 0 ? breakdown.totalPlanned : sessionsPlanned
 
   // Récupère les activités Strava de la semaine
   let recentActivities: StravaActivity[] = []
@@ -66,12 +113,13 @@ export async function POST(req: Request) {
       fatigueScore,
       motivationScore,
       sorenessScore,
-      sessionsDone,
-      sessionsPlanned,
+      sessionsDone: effectiveSessionsDone,
+      sessionsPlanned: effectiveSessionsPlanned,
       notes,
       sickDays,
       travelDays,
     },
+    sessionBreakdown: breakdown,
     externalRunPlan: plan.externalRunPlan as Parameters<typeof generateWeekAdjustment>[0]["externalRunPlan"],
     targetRaces: plan.targetRaces as Parameters<typeof generateWeekAdjustment>[0]["targetRaces"],
     strengthDays: plan.strengthDays,
@@ -125,8 +173,8 @@ export async function POST(req: Request) {
         fatigueScore,
         motivationScore,
         sorenessScore,
-        sessionsDone,
-        sessionsPlanned,
+        sessionsDone: effectiveSessionsDone,
+        sessionsPlanned: effectiveSessionsPlanned,
         notes,
         sickDays,
         travelDays,
