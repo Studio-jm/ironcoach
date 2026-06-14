@@ -46,6 +46,10 @@ type Props = {
   feeling: number | null
   editable: boolean
   source?: string
+  actualDurationMin?: number | null
+  actualDistanceKm?: number | null
+  avgHeartrate?: number | null
+  fromStrava?: boolean
 }
 
 const SOURCE_BADGES: Record<string, { label: string; className: string }> = {
@@ -155,11 +159,25 @@ export default function SessionCard(props: Props) {
         )}
       </div>
 
-      {/* Indicateur de feeling si renseigné */}
-      {props.feeling != null && optimisticStatus !== "PLANNED" && (
-        <div className="mt-2 pt-2 border-t border-zinc-800 flex items-center gap-2 text-xs text-zinc-500">
-          <span>Ressenti :</span>
-          <span className="text-zinc-300 font-medium">{props.feeling}/10</span>
+      {/* Données réelles Strava + ressenti */}
+      {(props.fromStrava || (props.feeling != null && optimisticStatus !== "PLANNED")) && (
+        <div className="mt-2 pt-2 border-t border-zinc-800 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-zinc-500">
+          {props.fromStrava && (
+            <span className="text-[#FC4C02] font-medium flex items-center gap-1">
+              <svg viewBox="0 0 24 24" className="w-3 h-3 fill-current">
+                <path d="M15.387 17.944l-2.089-4.116h-3.065L15.387 24l5.15-10.172h-3.066m-7.008-5.599l2.836 5.598h4.172L10.463 0l-7 13.828h4.169" />
+              </svg>
+              Réalisé
+            </span>
+          )}
+          {props.actualDurationMin != null && <span>{props.actualDurationMin}min</span>}
+          {props.actualDistanceKm != null && props.actualDistanceKm > 0 && (
+            <span>{props.actualDistanceKm}km</span>
+          )}
+          {props.avgHeartrate != null && <span>♥ {props.avgHeartrate} bpm</span>}
+          {props.feeling != null && optimisticStatus !== "PLANNED" && (
+            <span className="ml-auto">Ressenti {props.feeling}/10</span>
+          )}
         </div>
       )}
     </div>

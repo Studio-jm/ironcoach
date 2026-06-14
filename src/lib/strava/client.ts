@@ -65,6 +65,17 @@ export async function getRecentActivities(userId: string, weeks = 12) {
   })
 }
 
+// Activités entre deux dates (pour matcher une semaine d'entraînement)
+export async function getActivitiesInRange(userId: string, start: Date, end: Date) {
+  const after = Math.floor(start.getTime() / 1000) - 1
+  const before = Math.floor(end.getTime() / 1000) + 1
+  return stravaFetch(userId, "/athlete/activities", {
+    after: after.toString(),
+    before: before.toString(),
+    per_page: "100",
+  }) as Promise<StravaActivity[]>
+}
+
 export type StravaActivity = {
   id: number
   name: string
@@ -79,6 +90,7 @@ export type StravaActivity = {
   max_heartrate?: number
   suffer_score?: number
   start_date: string
+  start_date_local?: string
   average_watts?: number
   weighted_average_watts?: number
 }

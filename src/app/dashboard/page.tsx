@@ -6,6 +6,7 @@ import Link from "next/link"
 import SessionCard from "@/components/SessionCard"
 import InfoTooltip from "@/components/InfoTooltip"
 import TrendsCard from "@/components/TrendsCard"
+import SyncStravaButton from "@/components/SyncStravaButton"
 import { computeTrends } from "@/lib/trends"
 
 const DAY_LABELS: Record<string, string> = {
@@ -253,6 +254,9 @@ export default async function DashboardPage({
           <div className="flex items-center justify-between gap-2">
             <h2 className="font-semibold">Programme de la semaine</h2>
             <div className="flex items-center gap-2">
+              {hasDetailedSessions && selectedWeek && (isCurrentWeek || selectedWeek.status === "COMPLETED") && (
+                <SyncStravaButton weekId={selectedWeek.id} />
+              )}
               {hasDetailedSessions && selectedWeek && (
                 <a
                   href={`/api/weeks/${selectedWeek.id}/ical`}
@@ -294,6 +298,10 @@ export default async function DashboardPage({
                       feeling={s.feeling}
                       source={s.source}
                       editable={isCurrentWeek || selectedWeek?.status === "COMPLETED"}
+                      actualDurationMin={s.actualDurationMin}
+                      actualDistanceKm={s.actualDistanceKm}
+                      avgHeartrate={s.avgHeartrate}
+                      fromStrava={s.stravaActivityId != null}
                     />
                   ))}
                 </div>
