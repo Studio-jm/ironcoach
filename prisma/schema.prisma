@@ -229,7 +229,8 @@ model TrainingSession {
   createdAt         DateTime @default(now())
   updatedAt         DateTime @updatedAt
 
-  week TrainingWeek @relation(fields: [weekId], references: [id], onDelete: Cascade)
+  week       TrainingWeek @relation(fields: [weekId], references: [id], onDelete: Cascade)
+  blogSeance BlogSeance?
 
   @@index([weekId, day, orderInDay])
   @@map("training_sessions")
@@ -240,6 +241,39 @@ enum SessionStatus {
   COMPLETED
   SKIPPED
   PARTIAL
+}
+
+// ─── Seance : projection dénormalisée partagée coach ↔ blog ──────────────────
+// Source de vérité pour le pipeline blog. Le coach écrit plan/réalisé/compte
+// rendu/contexte ; le blog écrit brouillon/article/url. Clé = sessionId.
+
+model BlogSeance {
+  id        String   @id @default(cuid())
+  userId    String
+  sessionId String   @unique
+  date      DateTime
+  // Classification (vocabulaire du brief blog)
+  type      String   // entrainement / repos / recup
+  sport     String   // natation / velo / course / muscu / repos
+  statut    String   @default("planifie") // planifie / realise / brouillon_genere / publie
+  // Écrit par le coach
+  planPrevu          Json?
+  dataRealisee       Json?
+  compteRenduCoach   String? @db.Text
+  contexteNarratif   Json?
+  // Écrit par le pipeline blog
+  memoTranscription  String? @db.Text
+  brouillonArticle   String? @db.Text
+  articleFinal       String? @db.Text
+  urlPubliee         String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  session TrainingSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+
+  @@index([userId, statut])
+  @@index([date])
+  @@map("seances")
 }
 
 // ─── Check-in hebdomadaire ────────────────────────────────────────────────────

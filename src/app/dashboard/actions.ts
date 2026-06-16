@@ -6,6 +6,7 @@ import { revalidatePath } from "next/cache"
 import { getActivitiesInRange } from "@/lib/strava/client"
 import { matchActivitiesToSessions } from "@/lib/strava/matcher"
 import { generateSessionDebrief } from "@/lib/ai/coach"
+import { upsertBlogSeance } from "@/lib/blog/projection"
 
 type SessionStatus = "PLANNED" | "COMPLETED" | "SKIPPED" | "PARTIAL"
 
@@ -61,6 +62,7 @@ export async function generateSessionDebriefAction(sessionId: string): Promise<D
       data: { compteRendu: text, compteRenduAt: new Date() },
     })
 
+    await upsertBlogSeance(sessionId)
     revalidatePath("/dashboard")
     return { ok: true, text }
   } catch {
@@ -138,6 +140,9 @@ export async function syncWeekFromStrava(weekId: string): Promise<SyncResult> {
     )
   )
 
+  // Projette les séances synchronisées vers la table partagée blog
+  await Promise.all(updates.map((u) => upsertBlogSeance(u.sessionId)))
+
   revalidatePath("/dashboard")
   return {
     ok: true,
@@ -168,6 +173,7 @@ export async function updateSessionStatus(sessionId: string, status: SessionStat
     },
   })
 
+  await upsertBlogSeance(sessionId)
   revalidatePath("/dashboard")
 }
 
@@ -189,5 +195,6 @@ export async function setSessionFeeling(sessionId: string, feeling: number, note
     data: { feeling, notes: notes ?? null },
   })
 
+  await upsertBlogSeance(sessionId)
   revalidatePath("/dashboard")
 }

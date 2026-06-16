@@ -1,7 +1,8 @@
 import { auth } from "@/lib/auth"
 import { NextResponse } from "next/server"
 
-const PUBLIC_PATHS = ["/auth/signin", "/auth/error", "/api/auth"]
+// /api/blog est protégé par un token Bearer propre (pas la session NextAuth)
+const PUBLIC_PATHS = ["/auth/signin", "/auth/error", "/api/auth", "/api/blog"]
 
 export default auth((req) => {
   const { pathname } = req.nextUrl
