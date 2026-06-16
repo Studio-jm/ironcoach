@@ -26,6 +26,8 @@ function stravaCompatibleAdapter(adapter: Adapter): Adapter {
 
 export const { handlers, auth, signIn, signOut } = NextAuth({
   adapter: stravaCompatibleAdapter(PrismaAdapter(prisma)),
+  // Fait confiance à l'hôte (Vercel + futur domaine custom) pour les callbacks OAuth
+  trustHost: true,
   providers: [
     Strava({
       clientId: process.env.STRAVA_CLIENT_ID!,
