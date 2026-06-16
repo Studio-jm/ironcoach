@@ -43,6 +43,57 @@ Chaque session doit inclure :
 
 // ─────────────────────────────────────────────────────────────────────────────
 
+// Compte rendu de séance : analyse prévu vs réalisé. Brique-pont vers le blog.
+export function buildSessionDebriefPrompt(params: {
+  planned: {
+    discipline: string
+    durationMin: number
+    zone: string
+    description: string
+    plannedTSS: number
+  }
+  realized: {
+    status: string
+    actualDurationMin: number | null
+    actualDistanceKm: number | null
+    actualTSS: number | null
+    avgHeartrate: number | null
+    feeling: number | null
+    notes: string | null
+  }
+  context: {
+    weekNumber: number
+    phase: string
+    day: string
+  }
+}) {
+  return `Rédige un compte rendu de séance court et actionnable (l'athlète le lira dans l'app, et il alimentera son journal de prépa).
+
+## Séance prévue
+- Discipline : ${params.planned.discipline}
+- Durée : ${params.planned.durationMin} min · Zone : ${params.planned.zone} · TSS prévu : ${params.planned.plannedTSS}
+- Consigne : ${params.planned.description}
+
+## Séance réalisée
+- Statut : ${params.realized.status}
+- Durée réelle : ${params.realized.actualDurationMin ?? "non renseignée"} min
+- Distance : ${params.realized.actualDistanceKm ?? "non renseignée"} km
+- TSS réel : ${params.realized.actualTSS ?? "non renseigné"}
+- FC moyenne : ${params.realized.avgHeartrate ?? "non renseignée"}
+- Ressenti athlète : ${params.realized.feeling != null ? params.realized.feeling + "/10" : "non renseigné"}
+- Notes : ${params.realized.notes || "aucune"}
+
+## Contexte
+- Semaine ${params.context.weekNumber} (${params.context.phase}), ${params.context.day}
+
+## Format attendu (3 parties, ~120 mots au total, en français, ton de coach)
+1. **Bilan** : ce qui était prévu vs ce qui a été fait (écart d'intensité/durée, FC vs zone visée).
+2. **Lecture** : ce que ça dit de la forme/exécution (positif ou point de vigilance).
+3. **Conseil** : 1 recommandation concrète pour la suite.
+
+Réponds directement avec le texte (pas de JSON, pas de titre global), en utilisant les 3 intertitres en gras.`
+}
+
 type CampusCoachSession = {
   num: number
   type: string

@@ -1,8 +1,8 @@
 "use client"
 
 import { useState, useTransition } from "react"
-import { Check, X, MinusCircle } from "lucide-react"
-import { updateSessionStatus } from "@/app/dashboard/actions"
+import { Check, X, MinusCircle, FileText, Loader2 } from "lucide-react"
+import { updateSessionStatus, generateSessionDebriefAction } from "@/app/dashboard/actions"
 import InfoTooltip from "./InfoTooltip"
 
 const ZONE_INFO: Record<string, { name: string; desc: string }> = {
@@ -50,6 +50,7 @@ type Props = {
   actualDistanceKm?: number | null
   avgHeartrate?: number | null
   fromStrava?: boolean
+  compteRendu?: string | null
 }
 
 const SOURCE_BADGES: Record<string, { label: string; className: string }> = {
@@ -82,6 +83,35 @@ export default function SessionCard(props: Props) {
   const colorClass = DISCIPLINE_COLORS[props.discipline] ?? DISCIPLINE_COLORS.strength
   const statusClass = STATUS_STYLES[optimisticStatus] ?? ""
   const sourceBadge = props.source ? SOURCE_BADGES[props.source] : null
+
+  // Compte rendu de séance
+  const [debriefPending, startDebrief] = useTransition()
+  const [debrief, setDebrief] = useState<string | null>(props.compteRendu ?? null)
+  const [debriefError, setDebriefError] = useState("")
+  const canDebrief = optimisticStatus === "COMPLETED" || optimisticStatus === "PARTIAL"
+
+  const runDebrief = () => {
+    setDebriefError("")
+    startDebrief(async () => {
+      const res = await generateSessionDebriefAction(props.id)
+      if (res.ok && res.text) setDebrief(res.text)
+      else setDebriefError(res.message ?? "Erreur")
+    })
+  }
+
+  // Rendu simple du markdown gras (**texte**) du compte rendu
+  const renderDebrief = (text: string) =>
+    text.split("\n").map((line, i) => (
+      <p key={i} className={line.trim() === "" ? "h-1.5" : ""}>
+        {line.split(/(\*\*[^*]+\*\*)/g).map((part, j) =>
+          part.startsWith("**") && part.endsWith("**") ? (
+            <strong key={j} className="text-zinc-200 font-medium">{part.slice(2, -2)}</strong>
+          ) : (
+            <span key={j}>{part}</span>
+          )
+        )}
+      </p>
+    ))
 
   return (
     <div className={`bg-zinc-900 rounded-xl p-4 border border-transparent transition-all ${statusClass} ${isPending ? "opacity-70" : ""}`}>
@@ -178,6 +208,46 @@ export default function SessionCard(props: Props) {
           {props.feeling != null && optimisticStatus !== "PLANNED" && (
             <span className="ml-auto">Ressenti {props.feeling}/10</span>
           )}
+        </div>
+      )}
+
+      {/* Compte rendu de séance (coach) */}
+      {canDebrief && (
+        <div className="mt-2 pt-2 border-t border-zinc-800 space-y-2">
+          {debrief ? (
+            <div className="space-y-1.5">
+              <div className="flex items-center justify-between">
+                <span className="text-[11px] uppercase tracking-wide text-zinc-500 flex items-center gap-1">
+                  <FileText className="w-3 h-3" /> Compte rendu du coach
+                </span>
+                <button
+                  type="button"
+                  onClick={runDebrief}
+                  disabled={debriefPending}
+                  className="text-[11px] text-zinc-500 hover:text-zinc-300 transition-colors disabled:opacity-50"
+                >
+                  {debriefPending ? "..." : "Régénérer"}
+                </button>
+              </div>
+              <div className="text-xs text-zinc-400 leading-relaxed space-y-1">
+                {renderDebrief(debrief)}
+              </div>
+            </div>
+          ) : (
+            <button
+              type="button"
+              onClick={runDebrief}
+              disabled={debriefPending}
+              className="text-xs text-zinc-400 hover:text-white flex items-center gap-1.5 transition-colors disabled:opacity-50"
+            >
+              {debriefPending ? (
+                <><Loader2 className="w-3.5 h-3.5 animate-spin" /> Analyse en cours...</>
+              ) : (
+                <><FileText className="w-3.5 h-3.5" /> Générer le compte rendu</>
+              )}
+            </button>
+          )}
+          {debriefError && <p className="text-xs text-red-400">{debriefError}</p>}
         </div>
       )}
     </div>

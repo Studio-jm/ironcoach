@@ -321,6 +321,7 @@ export default async function DashboardPage({
                       actualDistanceKm={s.actualDistanceKm}
                       avgHeartrate={s.avgHeartrate}
                       fromStrava={s.stravaActivityId != null}
+                      compteRendu={s.compteRendu}
                     />
                   ))}
                 </div>

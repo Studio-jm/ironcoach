@@ -5,8 +5,68 @@ import { prisma } from "@/lib/prisma"
 import { revalidatePath } from "next/cache"
 import { getActivitiesInRange } from "@/lib/strava/client"
 import { matchActivitiesToSessions } from "@/lib/strava/matcher"
+import { generateSessionDebrief } from "@/lib/ai/coach"
 
 type SessionStatus = "PLANNED" | "COMPLETED" | "SKIPPED" | "PARTIAL"
+
+export type DebriefResult = { ok: boolean; text?: string; message?: string }
+
+/**
+ * Génère (ou régénère) le compte rendu d'une séance : analyse prévu vs réalisé
+ * par le coach. Stocké en BDD, réutilisable côté athlète et par le blog.
+ */
+export async function generateSessionDebriefAction(sessionId: string): Promise<DebriefResult> {
+  const session = await auth()
+  if (!session?.user?.id) return { ok: false, message: "Non autorisé" }
+
+  const s = await prisma.trainingSession.findUnique({
+    where: { id: sessionId },
+    include: { week: { include: { plan: { select: { userId: true } } } } },
+  })
+
+  if (!s || s.week.plan.userId !== session.user.id) {
+    return { ok: false, message: "Séance introuvable" }
+  }
+  if (s.status === "PLANNED") {
+    return { ok: false, message: "Valide d'abord la séance (faite / partielle)" }
+  }
+
+  try {
+    const text = await generateSessionDebrief({
+      planned: {
+        discipline: s.discipline,
+        durationMin: s.durationMin,
+        zone: s.zone,
+        description: s.description,
+        plannedTSS: s.plannedTSS,
+      },
+      realized: {
+        status: s.status,
+        actualDurationMin: s.actualDurationMin,
+        actualDistanceKm: s.actualDistanceKm,
+        actualTSS: s.actualTSS,
+        avgHeartrate: s.avgHeartrate,
+        feeling: s.feeling,
+        notes: s.notes,
+      },
+      context: {
+        weekNumber: s.week.weekNumber,
+        phase: s.week.phase,
+        day: s.day,
+      },
+    })
+
+    await prisma.trainingSession.update({
+      where: { id: sessionId },
+      data: { compteRendu: text, compteRenduAt: new Date() },
+    })
+
+    revalidatePath("/dashboard")
+    return { ok: true, text }
+  } catch {
+    return { ok: false, message: "Erreur de génération, réessaie" }
+  }
+}
 
 export type SyncResult = {
   ok: boolean

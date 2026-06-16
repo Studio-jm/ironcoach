@@ -1,5 +1,5 @@
 import Anthropic from "@anthropic-ai/sdk"
-import { IRONMAN_SYSTEM_PROMPT, buildPlanPrompt, buildCheckInPrompt } from "./prompts"
+import { IRONMAN_SYSTEM_PROMPT, buildPlanPrompt, buildCheckInPrompt, buildSessionDebriefPrompt } from "./prompts"
 
 const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
 
@@ -86,4 +86,11 @@ export async function generateWeekAdjustment(params: Parameters<typeof buildChec
     plannedTSS: number
     coachMessage: string
   }
+}
+
+// Compte rendu de séance (texte libre, court). Réponse non-JSON.
+export async function generateSessionDebrief(params: Parameters<typeof buildSessionDebriefPrompt>[0]) {
+  const prompt = buildSessionDebriefPrompt(params)
+  const raw = await callClaude(prompt, 700)
+  return raw.trim()
 }

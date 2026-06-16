@@ -223,6 +223,9 @@ model TrainingSession {
   notes             String?  @db.Text
   // Lien Strava
   stravaActivityId  BigInt?
+  // Compte rendu généré par le coach (analyse prévu vs réalisé) — pont vers le blog
+  compteRendu       String?  @db.Text
+  compteRenduAt     DateTime?
   createdAt         DateTime @default(now())
   updatedAt         DateTime @updatedAt
 
