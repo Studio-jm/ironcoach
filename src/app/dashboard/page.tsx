@@ -8,8 +8,10 @@ import InfoTooltip from "@/components/InfoTooltip"
 import TrendsCard from "@/components/TrendsCard"
 import SyncStravaButton from "@/components/SyncStravaButton"
 import FitnessChart from "@/components/FitnessChart"
+import PredictionCard from "@/components/PredictionCard"
 import { computeTrends } from "@/lib/trends"
 import { computeFitness } from "@/lib/fitness"
+import { predictRaceTime } from "@/lib/prediction"
 
 const DAY_LABELS: Record<string, string> = {
   monday: "Lundi", tuesday: "Mardi", wednesday: "Mercredi",
@@ -36,22 +38,25 @@ export default async function DashboardPage({
   const userId = session.user.id
   const { week: weekParam } = await searchParams
 
-  const activePlan = await prisma.trainingPlan.findFirst({
-    where: { userId, status: "ACTIVE" },
-    include: {
-      weeks: {
-        orderBy: { weekNumber: "asc" },
-        include: {
-          sessions: {
-            orderBy: [{ day: "asc" }, { orderInDay: "asc" }],
+  const [activePlan, athleteProfile] = await Promise.all([
+    prisma.trainingPlan.findFirst({
+      where: { userId, status: "ACTIVE" },
+      include: {
+        weeks: {
+          orderBy: { weekNumber: "asc" },
+          include: {
+            sessions: {
+              orderBy: [{ day: "asc" }, { orderInDay: "asc" }],
+            },
+            checkIn: true,
           },
-          checkIn: true,
         },
+        _count: { select: { weeks: true, checkIns: true } },
       },
-      _count: { select: { weeks: true, checkIns: true } },
-    },
-    orderBy: { createdAt: "desc" },
-  })
+      orderBy: { createdAt: "desc" },
+    }),
+    prisma.athleteProfile.findUnique({ where: { userId } }),
+  ])
 
   if (!activePlan) {
     return (
@@ -83,6 +88,15 @@ export default async function DashboardPage({
 
   // Courbe de forme (CTL/ATL/TSB) sur tout le plan
   const fitness = computeFitness(activePlan.weeks)
+
+  // Prévision de chrono (prudente, s'affine au fil du plan)
+  const prediction = predictRaceTime({
+    eventType: activePlan.targetEvent as "IRONMAN" | "HALF_IRONMAN" | "OLYMPIC" | "SPRINT",
+    snapshot: (athleteProfile?.stravaSnapshot as Parameters<typeof predictRaceTime>[0]["snapshot"]) ?? null,
+    ctl: fitness.current?.ctl ?? 0,
+    progress: activePlan.totalWeeks > 0 ? activePlan._count.checkIns / activePlan.totalWeeks : 0,
+    targetGoal: activePlan.targetGoal,
+  })
 
   const sessions = selectedWeek?.sessions ?? []
   const sessionsByDay = DAYS_ORDER.reduce<Record<string, typeof sessions>>((acc, day) => {
@@ -323,6 +337,9 @@ export default async function DashboardPage({
             </div>
           )}
         </div>
+
+        {/* Prévision de chrono */}
+        <PredictionCard prediction={prediction} />
 
         {/* Courbe de forme */}
         <FitnessChart model={fitness} />
